@@ -14,10 +14,11 @@ type Props = {
   settings: CanvasSettings | null
   bgImage: HTMLImageElement | null
   onError: (message: string | null) => void
+  className?: string
 }
 
 export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function ShaderCanvas(
-  { media, layers, settings, bgImage, onError },
+  { media, layers, settings, bgImage, onError, className },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -77,7 +78,7 @@ export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function Shade
   return (
     <canvas
       ref={canvasRef}
-      className="max-h-full max-w-full rounded-lg object-contain"
+      className={`max-h-full max-w-full rounded-lg object-contain ${className ?? ""}`}
       style={{ display: media ? "block" : "none" }}
     />
   )

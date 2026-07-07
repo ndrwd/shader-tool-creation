@@ -208,6 +208,25 @@ function LayerCard({
                 )
               }
 
+              if (p.type === "select" && p.options?.length) {
+                return (
+                  <div key={p.key} className="flex flex-col gap-2">
+                    <label className="text-sm text-foreground">{p.label}</label>
+                    <select
+                      value={value}
+                      onChange={(e) => onParamChange(p.key, Number.parseFloat(e.target.value))}
+                      className="rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground outline-none transition-colors hover:bg-secondary focus:border-foreground/30"
+                    >
+                      {p.options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              }
+
               return (
                 <div key={p.key} className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">

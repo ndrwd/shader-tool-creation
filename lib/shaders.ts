@@ -10,7 +10,8 @@ export type ShaderParam = {
   step: number
   default: number
   // "toggle" renders as an on/off switch (value is 0 or 1). Defaults to "range".
-  type?: "range" | "toggle"
+  type?: "range" | "toggle" | "select"
+  options?: { value: number; label: string }[]
 }
 
 export type ShaderDef = {
@@ -47,6 +48,37 @@ varying vec2 v_uv;
 uniform sampler2D u_texture;
 uniform vec2 u_resolution;
 uniform float u_time;
+`
+
+// High-quality film grain / hash — no cell-grid quantization.
+const NOISE_FUNCS = `
+float hash21(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float filmGrain(vec2 frag, float grainSize, float frame) {
+  vec2 p = frag / max(grainSize, 1.0);
+  float g = 0.0;
+  float amp = 0.55;
+  float freq = 1.0;
+  for (int i = 0; i < 4; i++) {
+    g += (hash21(p * freq + frame) - 0.5) * amp;
+    freq *= 2.1;
+    amp *= 0.5;
+  }
+  g += (hash21(frag * 1.7 + frame * 13.7) - 0.5) * 0.12;
+  return g;
+}
+
+vec3 filmGrainRgb(vec2 frag, float grainSize, float frame) {
+  return vec3(
+    filmGrain(frag, grainSize, frame),
+    filmGrain(frag + 19.17, grainSize, frame + 7.3),
+    filmGrain(frag + 47.83, grainSize, frame + 13.1)
+  );
+}
 `
 
 export const SHADERS: ShaderDef[] = [
@@ -484,6 +516,7 @@ void main() {
       toggle("tracking", "Tracking Bar"),
     ],
     fragment: `${HEADER}
+${NOISE_FUNCS}
 uniform float u_wobble;
 uniform float u_noise;
 uniform float u_bleed;
@@ -512,7 +545,7 @@ void main() {
   vec3 color = vec3(r, g, b);
   float lum = dot(color, vec3(0.299, 0.587, 0.114));
   color = mix(color, vec3(lum), u_desaturate);
-  float n = rand(v_uv + fract(t)) - 0.5;
+  float n = filmGrain(gl_FragCoord.xy, 1.2, floor(t * 24.0));
   color += n * u_noise;
   float scan = 0.9 + 0.1 * sin(v_uv.y * u_resolution.y * 1.5);
   color *= scan;
@@ -546,20 +579,23 @@ vec3 sampleBright(vec2 uv) {
   return c * smoothstep(u_threshold, 1.0, l);
 }
 
+vec3 blurBright(vec2 uv, float radiusPx) {
+  vec2 stepPx = vec2(radiusPx / 6.0) / u_resolution;
+  vec3 acc = vec3(0.0);
+  float weightSum = 0.0;
+  for (int i = -6; i <= 6; i++) {
+    float fi = float(i);
+    float w = exp(-0.5 * fi * fi / 12.0);
+    acc += sampleBright(uv + vec2(fi, 0.0) * stepPx) * w;
+    acc += sampleBright(uv + vec2(0.0, fi) * stepPx) * w;
+    weightSum += w * 2.0;
+  }
+  return acc / weightSum;
+}
+
 void main() {
   vec3 base = texture2D(u_texture, v_uv).rgb;
-  vec2 px = u_radius / u_resolution;
-  vec3 bloom = vec3(0.0);
-  float total = 0.0;
-  for (int x = -3; x <= 3; x++) {
-    for (int y = -3; y <= 3; y++) {
-      vec2 off = vec2(float(x), float(y));
-      float w = exp(-dot(off, off) * 0.25);
-      bloom += sampleBright(v_uv + off * px) * w;
-      total += w;
-    }
-  }
-  bloom /= total;
+  vec3 bloom = blurBright(v_uv, u_radius * 8.0);
   float bl = dot(bloom, vec3(0.299, 0.587, 0.114));
   bloom = mix(vec3(bl), bloom, u_saturation);
   vec3 color = (base + bloom * u_intensity) * u_exposure;
@@ -643,50 +679,78 @@ void main() {
     name: "Progressive Blur",
     description: "Directional gradient blur that ramps across the frame",
     params: [
-      { key: "strength", label: "Strength", min: 0.0, max: 12.0, step: 0.1, default: 5.0 },
-      { key: "direction", label: "Direction", min: 0.0, max: 3.0, step: 1.0, default: 0.0 },
-      { key: "start", label: "Start", min: 0.0, max: 1.0, step: 0.01, default: 0.4 },
-      { key: "falloff", label: "Falloff", min: 0.5, max: 4.0, step: 0.05, default: 1.5 },
-      toggle("invert", "Invert"),
-      blend(),
+      { key: "maxBlur", label: "Max Blur", min: 0.0, max: 50.0, step: 0.01, default: 1.3 },
+      { key: "gradientStart", label: "Gradient Start", min: 0.0, max: 1.0, step: 0.01, default: 0.32 },
+      { key: "gradientEnd", label: "Gradient End", min: 0.0, max: 1.0, step: 0.01, default: 0.75 },
+      {
+        key: "axis",
+        label: "Axis",
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        type: "select",
+        options: [
+          { value: 0, label: "Horizontal (X)" },
+          { value: 1, label: "Vertical (Y)" },
+        ],
+      },
+      { key: "angle", label: "Angle", min: 0.0, max: 6.28, step: 0.01, default: 0.0 },
+      { key: "softness", label: "Softness", min: 0.0, max: 1.0, step: 0.01, default: 0.0 },
+      { key: "arc", label: "Arc", min: 0.0, max: 1.0, step: 0.01, default: 0.0 },
     ],
     fragment: `${HEADER}
-uniform float u_strength;
-uniform float u_direction;
-uniform float u_start;
-uniform float u_falloff;
-uniform float u_invert;
-uniform float u_mix;
+uniform float u_maxBlur;
+uniform float u_gradientStart;
+uniform float u_gradientEnd;
+uniform float u_axis;
+uniform float u_angle;
+uniform float u_softness;
+uniform float u_arc;
+
+uniform float u_pass;
+
+vec3 blurPass(vec2 uv, float radiusPx) {
+  if (radiusPx < 0.5) return texture2D(u_texture, uv).rgb;
+
+  vec2 stepPx = vec2(radiusPx / 8.0) / u_resolution;
+  vec3 acc = vec3(0.0);
+  float weightSum = 0.0;
+
+  for (int i = -8; i <= 8; i++) {
+    float fi = float(i);
+    float w = exp(-0.5 * fi * fi / 16.0);
+    vec2 offset = u_pass < 0.5 ? vec2(fi) * stepPx : vec2(0.0, fi) * stepPx;
+    acc += texture2D(u_texture, uv + offset).rgb * w;
+    weightSum += w;
+  }
+
+  return acc / weightSum;
+}
 
 void main() {
-  // Progress along the chosen axis: 0=bottom->top, 1=top->bottom, 2=left->right, 3=right->left
-  float axis = v_uv.y;
-  if (u_direction < 0.5) axis = 1.0 - v_uv.y;
-  else if (u_direction < 1.5) axis = v_uv.y;
-  else if (u_direction < 2.5) axis = v_uv.x;
-  else axis = 1.0 - v_uv.x;
+  float aspect = u_resolution.x / u_resolution.y;
+  vec2 p = v_uv - 0.5;
+  p.x *= aspect;
 
-  float t = clamp((axis - u_start) / max(1.0 - u_start, 0.001), 0.0, 1.0);
-  t = pow(t, u_falloff);
-  if (u_invert > 0.5) t = 1.0 - t;
+  vec2 axisDir = u_axis < 0.5 ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  float c = cos(u_angle);
+  float s = sin(u_angle);
+  axisDir = vec2(axisDir.x * c - axisDir.y * s, axisDir.x * s + axisDir.y * c);
 
-  float radius = t * u_strength;
-  vec2 px = radius / u_resolution;
-
-  vec3 sum = vec3(0.0);
-  float total = 0.0;
-  for (int i = -4; i <= 4; i++) {
-    for (int j = -4; j <= 4; j++) {
-      vec2 offset = vec2(float(i), float(j)) * px * 0.25;
-      float w = 1.0 - length(vec2(float(i), float(j))) / 6.0;
-      w = max(w, 0.0);
-      sum += texture2D(u_texture, v_uv + offset).rgb * w;
-      total += w;
-    }
+  float t = dot(p, axisDir) + 0.5;
+  if (u_arc > 0.001) {
+    float radial = clamp(length(p) / 0.70710678, 0.0, 1.0);
+    t = mix(t, radial, clamp(u_arc, 0.0, 1.0));
   }
-  vec3 blurred = sum / max(total, 0.001);
-  vec3 color = texture2D(u_texture, v_uv).rgb;
-  gl_FragColor = vec4(mix(color, blurred, u_mix), 1.0);
+
+  float range = max(u_gradientEnd - u_gradientStart, 0.001);
+  float pad = u_softness * range * 0.5;
+  float blurAmt = smoothstep(u_gradientStart - pad, u_gradientEnd + pad, t);
+
+  float pixelRadius = blurAmt * u_maxBlur;
+  vec3 blurred = blurPass(v_uv, pixelRadius);
+  gl_FragColor = vec4(blurred, 1.0);
 }
 `,
   },
@@ -703,6 +767,7 @@ void main() {
       blend(),
     ],
     fragment: `${HEADER}
+${NOISE_FUNCS}
 uniform float u_amount;
 uniform float u_size;
 uniform float u_shadows;
@@ -710,23 +775,16 @@ uniform float u_mono;
 uniform float u_animate;
 uniform float u_mix;
 
-float hash(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
-
 void main() {
   vec3 color = texture2D(u_texture, v_uv).rgb;
   float seed = u_animate > 0.5 ? floor(u_time * 24.0) : 0.0;
-  vec2 gp = floor(gl_FragCoord.xy / u_size) + seed;
 
   vec3 noise;
   if (u_mono > 0.5) {
-    float n = hash(gp) - 0.5;
+    float n = filmGrain(gl_FragCoord.xy, u_size, seed);
     noise = vec3(n);
   } else {
-    noise = vec3(hash(gp), hash(gp + 17.0), hash(gp + 43.0)) - 0.5;
+    noise = filmGrainRgb(gl_FragCoord.xy, u_size, seed);
   }
 
   float l = dot(color, vec3(0.299, 0.587, 0.114));
@@ -793,6 +851,7 @@ void main() {
       blend(),
     ],
     fragment: `${HEADER}
+${NOISE_FUNCS}
 uniform float u_saturation;
 uniform float u_vibrance;
 uniform float u_brightness;
@@ -800,12 +859,6 @@ uniform float u_grain;
 uniform float u_grainSize;
 uniform float u_animate;
 uniform float u_mix;
-
-float hash(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
-}
 
 void main() {
   vec3 color = texture2D(u_texture, v_uv).rgb;
@@ -819,8 +872,7 @@ void main() {
   c = mix(vec3(l), c, 1.0 + u_vibrance * (1.0 - sat));
 
   float seed = u_animate > 0.5 ? floor(u_time * 24.0) : 0.0;
-  vec2 gp = floor(gl_FragCoord.xy / u_grainSize) + seed;
-  vec3 noise = vec3(hash(gp), hash(gp + 17.0), hash(gp + 43.0)) - 0.5;
+  vec3 noise = filmGrainRgb(gl_FragCoord.xy, u_grainSize, seed);
   c += noise * u_grain;
 
   c = clamp(c, 0.0, 1.0);

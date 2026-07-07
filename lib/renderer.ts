@@ -157,13 +157,20 @@ export class ShaderRenderer {
 
   // Build the shader chain from the enabled layers, caching programs by fragment source.
   setLayers(layers: { shader: ShaderDef; params: Record<string, number> }[]) {
-    this.layers = layers.map(({ shader, params }) => {
+    this.layers = layers.flatMap(({ shader, params }) => {
       let program = this.programCache.get(shader.fragment)
       if (!program) {
         program = this.buildProgram(VERTEX_SHADER, shader.fragment)
         this.programCache.set(shader.fragment, program)
       }
-      return { program, params }
+      // Progressive blur runs as a true 2-pass separable Gaussian (H then V).
+      if (shader.id === "progressiveBlur") {
+        return [
+          { program, params: { ...params, pass: 0 } },
+          { program, params: { ...params, pass: 1 } },
+        ]
+      }
+      return [{ program, params }]
     })
   }
 

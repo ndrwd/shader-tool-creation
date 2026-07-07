@@ -237,7 +237,7 @@ export default function Page() {
         >
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 opacity-40"
+            className={`pointer-events-none absolute inset-0 ${media ? "hidden" : "opacity-40"}`}
             style={{
               backgroundImage:
                 "linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
@@ -252,6 +252,7 @@ export default function Page() {
             settings={settings}
             bgImage={bgImage}
             onError={setError}
+            className="relative z-10"
           />
 
           {!media && (
