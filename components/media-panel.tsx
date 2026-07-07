@@ -155,12 +155,12 @@ export function MediaPanel({
           {/* Size + Position row */}
           <div className="grid grid-cols-2 gap-4">
             {/* Size */}
-            <div>
+            <div className="flex flex-col">
               <h3 className="mb-1 text-sm font-medium text-foreground">Size</h3>
               <p className="mb-2 text-xs text-muted-foreground">
                 original: {originalSize ? `${originalSize.width}×${originalSize.height}` : "—"}
               </p>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-1 items-center gap-1.5">
                 <input
                   type="number"
                   min={1}
@@ -192,7 +192,7 @@ export function MediaPanel({
             {/* Position */}
             <div>
               <h3 className="mb-2 text-sm font-medium text-foreground">Position</h3>
-              <div className="flex items-stretch gap-2">
+              <div className="flex h-24 items-stretch gap-2">
                 <div
                   ref={padRef}
                   onPointerDown={(e) => {
@@ -202,7 +202,7 @@ export function MediaPanel({
                   }}
                   onPointerMove={(e) => dragging.current && handlePad(e)}
                   onPointerUp={() => (dragging.current = false)}
-                  className="relative aspect-square w-full min-w-0 max-w-24 cursor-crosshair self-start rounded-md border border-border bg-secondary/30"
+                  className="relative aspect-square h-full cursor-crosshair rounded-md border border-border bg-secondary/30"
                 >
                   {/* crosshair guides */}
                   <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
