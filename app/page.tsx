@@ -90,6 +90,20 @@ export default function Page() {
     img.src = url
   }, [])
 
+  // Load the default city image on mount so shaders have a preview immediately.
+  useEffect(() => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      setMediaName("city48.jpg")
+      setPreviewUrl(img.src)
+      setOriginalSize({ width: img.naturalWidth, height: img.naturalHeight })
+      setSettings({ width: img.naturalWidth, height: img.naturalHeight, ...DEFAULT_CANVAS })
+      setMedia({ kind: "image", el: img, width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.src = "/default-city.jpg"
+  }, [])
+
   // Paste an image from the clipboard.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
