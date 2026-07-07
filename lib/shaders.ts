@@ -607,6 +607,227 @@ void main() {
 }
 `,
   },
+  {
+    id: "highContrast",
+    name: "High Contrast",
+    description: "Punchy contrast, saturation and brightness grading",
+    params: [
+      { key: "contrast", label: "Contrast", min: 0.5, max: 3.0, step: 0.05, default: 1.6 },
+      { key: "brightness", label: "Brightness", min: -0.5, max: 0.5, step: 0.01, default: 0.0 },
+      { key: "saturation", label: "Saturation", min: 0.0, max: 2.5, step: 0.05, default: 1.2 },
+      { key: "pivot", label: "Pivot", min: 0.2, max: 0.8, step: 0.01, default: 0.5 },
+      toggle("crush", "Black Crush"),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_contrast;
+uniform float u_brightness;
+uniform float u_saturation;
+uniform float u_pivot;
+uniform float u_crush;
+uniform float u_mix;
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  vec3 graded = (color - u_pivot) * u_contrast + u_pivot + u_brightness;
+  float l = dot(graded, vec3(0.299, 0.587, 0.114));
+  graded = mix(vec3(l), graded, u_saturation);
+  if (u_crush > 0.5) graded = graded * graded * (3.0 - 2.0 * graded);
+  graded = clamp(graded, 0.0, 1.0);
+  gl_FragColor = vec4(mix(color, graded, u_mix), 1.0);
+}
+`,
+  },
+  {
+    id: "progressiveBlur",
+    name: "Progressive Blur",
+    description: "Directional gradient blur that ramps across the frame",
+    params: [
+      { key: "strength", label: "Strength", min: 0.0, max: 12.0, step: 0.1, default: 5.0 },
+      { key: "direction", label: "Direction", min: 0.0, max: 3.0, step: 1.0, default: 0.0 },
+      { key: "start", label: "Start", min: 0.0, max: 1.0, step: 0.01, default: 0.4 },
+      { key: "falloff", label: "Falloff", min: 0.5, max: 4.0, step: 0.05, default: 1.5 },
+      toggle("invert", "Invert"),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_strength;
+uniform float u_direction;
+uniform float u_start;
+uniform float u_falloff;
+uniform float u_invert;
+uniform float u_mix;
+
+void main() {
+  // Progress along the chosen axis: 0=bottom->top, 1=top->bottom, 2=left->right, 3=right->left
+  float axis = v_uv.y;
+  if (u_direction < 0.5) axis = 1.0 - v_uv.y;
+  else if (u_direction < 1.5) axis = v_uv.y;
+  else if (u_direction < 2.5) axis = v_uv.x;
+  else axis = 1.0 - v_uv.x;
+
+  float t = clamp((axis - u_start) / max(1.0 - u_start, 0.001), 0.0, 1.0);
+  t = pow(t, u_falloff);
+  if (u_invert > 0.5) t = 1.0 - t;
+
+  float radius = t * u_strength;
+  vec2 px = radius / u_resolution;
+
+  vec3 sum = vec3(0.0);
+  float total = 0.0;
+  for (int i = -4; i <= 4; i++) {
+    for (int j = -4; j <= 4; j++) {
+      vec2 offset = vec2(float(i), float(j)) * px * 0.25;
+      float w = 1.0 - length(vec2(float(i), float(j))) / 6.0;
+      w = max(w, 0.0);
+      sum += texture2D(u_texture, v_uv + offset).rgb * w;
+      total += w;
+    }
+  }
+  vec3 blurred = sum / max(total, 0.001);
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  gl_FragColor = vec4(mix(color, blurred, u_mix), 1.0);
+}
+`,
+  },
+  {
+    id: "grain",
+    name: "Grain",
+    description: "Animated film grain with luminance-aware noise",
+    params: [
+      { key: "amount", label: "Amount", min: 0.0, max: 1.0, step: 0.01, default: 0.35 },
+      { key: "size", label: "Grain Size", min: 0.5, max: 4.0, step: 0.05, default: 1.0 },
+      { key: "shadows", label: "Shadow Boost", min: 0.0, max: 2.0, step: 0.05, default: 1.0 },
+      toggle("mono", "Monochrome", true),
+      toggle("animate", "Animate", true),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_amount;
+uniform float u_size;
+uniform float u_shadows;
+uniform float u_mono;
+uniform float u_animate;
+uniform float u_mix;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  float seed = u_animate > 0.5 ? floor(u_time * 24.0) : 0.0;
+  vec2 gp = floor(gl_FragCoord.xy / u_size) + seed;
+
+  vec3 noise;
+  if (u_mono > 0.5) {
+    float n = hash(gp) - 0.5;
+    noise = vec3(n);
+  } else {
+    noise = vec3(hash(gp), hash(gp + 17.0), hash(gp + 43.0)) - 0.5;
+  }
+
+  float l = dot(color, vec3(0.299, 0.587, 0.114));
+  float weight = mix(1.0, 1.0 + (1.0 - l) * u_shadows, 1.0);
+  vec3 grained = clamp(color + noise * u_amount * weight, 0.0, 1.0);
+  gl_FragColor = vec4(mix(color, grained, u_mix), 1.0);
+}
+`,
+  },
+  {
+    id: "spiralHalftone",
+    name: "Spiral Halftone",
+    description: "Halftone dots arranged along a rotating spiral",
+    params: [
+      { key: "scale", label: "Dot Scale", min: 4.0, max: 60.0, step: 1.0, default: 24.0 },
+      { key: "twist", label: "Twist", min: 0.0, max: 20.0, step: 0.1, default: 6.0 },
+      { key: "contrast", label: "Contrast", min: 0.5, max: 3.0, step: 0.05, default: 1.3 },
+      { key: "spin", label: "Spin Speed", min: -3.0, max: 3.0, step: 0.05, default: 0.4 },
+      toggle("colored", "Colored"),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_scale;
+uniform float u_twist;
+uniform float u_contrast;
+uniform float u_spin;
+uniform float u_colored;
+uniform float u_mix;
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  float aspect = u_resolution.x / u_resolution.y;
+
+  // Polar coordinates around the center, aspect corrected.
+  vec2 p = v_uv - 0.5;
+  p.x *= aspect;
+  float r = length(p);
+  float a = atan(p.y, p.x) + u_time * u_spin;
+
+  // Warp the sampling grid into a spiral, then build a dot lattice.
+  vec2 spiral = vec2(a * u_twist + r * u_scale, r * u_scale);
+  vec2 cell = fract(spiral) - 0.5;
+  float dist = length(cell) * 2.0;
+
+  float lum = clamp((dot(color, vec3(0.299, 0.587, 0.114)) - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+  float dotMask = smoothstep(lum + 0.05, lum - 0.05, dist);
+
+  vec3 result = u_colored > 0.5 ? color * dotMask : vec3(dotMask);
+  gl_FragColor = vec4(mix(color, result, u_mix), 1.0);
+}
+`,
+  },
+  {
+    id: "grainyBright",
+    name: "Grainy Bright Colours",
+    description: "Vivid saturated grade with punchy chromatic grain",
+    params: [
+      { key: "saturation", label: "Saturation", min: 1.0, max: 3.0, step: 0.05, default: 1.8 },
+      { key: "vibrance", label: "Vibrance", min: 0.0, max: 2.0, step: 0.05, default: 1.0 },
+      { key: "brightness", label: "Brightness", min: 0.0, max: 0.6, step: 0.01, default: 0.15 },
+      { key: "grain", label: "Grain", min: 0.0, max: 1.0, step: 0.01, default: 0.4 },
+      { key: "grainSize", label: "Grain Size", min: 0.5, max: 4.0, step: 0.05, default: 1.5 },
+      toggle("animate", "Animate", true),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_saturation;
+uniform float u_vibrance;
+uniform float u_brightness;
+uniform float u_grain;
+uniform float u_grainSize;
+uniform float u_animate;
+uniform float u_mix;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  vec3 c = color + u_brightness;
+
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  // Base saturation lift.
+  c = mix(vec3(l), c, u_saturation);
+  // Vibrance protects already-saturated pixels, boosts muted ones.
+  float sat = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
+  c = mix(vec3(l), c, 1.0 + u_vibrance * (1.0 - sat));
+
+  float seed = u_animate > 0.5 ? floor(u_time * 24.0) : 0.0;
+  vec2 gp = floor(gl_FragCoord.xy / u_grainSize) + seed;
+  vec3 noise = vec3(hash(gp), hash(gp + 17.0), hash(gp + 43.0)) - 0.5;
+  c += noise * u_grain;
+
+  c = clamp(c, 0.0, 1.0);
+  gl_FragColor = vec4(mix(color, c, u_mix), 1.0);
+}
+`,
+  },
 ]
 
 export function getShader(id: string): ShaderDef {
@@ -617,4 +838,22 @@ export function defaultParams(shader: ShaderDef): Record<string, number> {
   const out: Record<string, number> = {}
   for (const p of shader.params) out[p.key] = p.default
   return out
+}
+
+// A single effect in the shader stack. Enabled layers are applied in order.
+export type ShaderLayer = {
+  uid: string
+  shaderId: string
+  params: Record<string, number>
+  enabled: boolean
+}
+
+export function createLayer(shaderId: string): ShaderLayer {
+  const shader = getShader(shaderId)
+  return {
+    uid: Math.random().toString(36).slice(2, 10),
+    shaderId: shader.id,
+    params: defaultParams(shader),
+    enabled: true,
+  }
 }
