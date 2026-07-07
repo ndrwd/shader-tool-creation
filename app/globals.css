@@ -181,3 +181,26 @@
   cursor: pointer;
   border: 2px solid var(--background);
 }
+
+/* Vertical zoom slider */
+.slider-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--foreground);
+  cursor: pointer;
+  border: 2px solid var(--background);
+}
+.slider-vertical::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--foreground);
+  cursor: pointer;
+  border: 2px solid var(--background);
+}
+.slider-vertical {
+  accent-color: var(--foreground);
+}

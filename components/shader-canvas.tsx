@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useImperativeHandle, useRef, forwardRef } from "react"
-import { ShaderRenderer, type MediaSource } from "@/lib/renderer"
+import { ShaderRenderer, type MediaSource, type CanvasSettings } from "@/lib/renderer"
 import { getShader } from "@/lib/shaders"
 
 export type ShaderCanvasHandle = {
@@ -12,11 +12,13 @@ type Props = {
   media: MediaSource | null
   shaderId: string
   params: Record<string, number>
+  settings: CanvasSettings | null
+  bgImage: HTMLImageElement | null
   onError: (message: string | null) => void
 }
 
 export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function ShaderCanvas(
-  { media, shaderId, params, onError },
+  { media, shaderId, params, settings, bgImage, onError },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -47,6 +49,17 @@ export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function Shade
     if (!rendererRef.current || !media) return
     rendererRef.current.setMedia(media)
   }, [media])
+
+  // Update canvas settings (size / position / zoom / background).
+  useEffect(() => {
+    if (!rendererRef.current || !settings) return
+    rendererRef.current.setSettings(settings)
+  }, [settings])
+
+  // Update background image.
+  useEffect(() => {
+    rendererRef.current?.setBackgroundImage(bgImage)
+  }, [bgImage])
 
   // Update shader program.
   useEffect(() => {

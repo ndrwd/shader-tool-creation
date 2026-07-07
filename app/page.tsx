@@ -1,21 +1,28 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
-import { Upload, Download, ImageIcon, Video, X } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Download, ImageIcon, Video, X } from "lucide-react"
 import { ShaderCanvas, type ShaderCanvasHandle } from "@/components/shader-canvas"
 import { ControlsPanel } from "@/components/controls-panel"
+import { MediaPanel } from "@/components/media-panel"
 import { getShader, defaultParams } from "@/lib/shaders"
-import type { MediaSource } from "@/lib/renderer"
+import { DEFAULT_CANVAS, type CanvasSettings, type MediaSource } from "@/lib/renderer"
 
 export default function Page() {
   const [shaderId, setShaderId] = useState("dither")
   const [params, setParams] = useState<Record<string, number>>(() => defaultParams(getShader("dither")))
   const [media, setMedia] = useState<MediaSource | null>(null)
   const [mediaName, setMediaName] = useState<string>("")
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [originalSize, setOriginalSize] = useState<{ width: number; height: number } | null>(null)
+  const [settings, setSettings] = useState<CanvasSettings | null>(null)
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
+  const [bgPreviewUrl, setBgPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const bgInputRef = useRef<HTMLInputElement>(null)
   const canvasHandle = useRef<ShaderCanvasHandle>(null)
 
   const activeShader = getShader(shaderId)
@@ -29,24 +36,28 @@ export default function Page() {
     setParams((prev) => ({ ...prev, [key]: value }))
   }, [])
 
-  const handleReset = useCallback(() => {
+  const handleParamsReset = useCallback(() => {
     setParams(defaultParams(activeShader))
   }, [activeShader])
 
   const loadFile = useCallback((file: File) => {
     setError(null)
-    const url = URL.createObjectURL(file)
-    setMediaName(file.name)
 
     if (file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file)
       const img = new Image()
       img.crossOrigin = "anonymous"
       img.onload = () => {
+        setMediaName(file.name)
+        setPreviewUrl(url)
+        setOriginalSize({ width: img.naturalWidth, height: img.naturalHeight })
+        setSettings({ width: img.naturalWidth, height: img.naturalHeight, ...DEFAULT_CANVAS })
         setMedia({ kind: "image", el: img, width: img.naturalWidth, height: img.naturalHeight })
       }
       img.onerror = () => setError("Failed to load image")
       img.src = url
     } else if (file.type.startsWith("video/")) {
+      const url = URL.createObjectURL(file)
       const video = document.createElement("video")
       video.crossOrigin = "anonymous"
       video.loop = true
@@ -55,6 +66,10 @@ export default function Page() {
       video.src = url
       video.onloadeddata = () => {
         video.play().catch(() => {})
+        setMediaName(file.name)
+        setPreviewUrl(url)
+        setOriginalSize({ width: video.videoWidth, height: video.videoHeight })
+        setSettings({ width: video.videoWidth, height: video.videoHeight, ...DEFAULT_CANVAS })
         setMedia({ kind: "video", el: video, width: video.videoWidth, height: video.videoHeight })
       }
       video.onerror = () => setError("Failed to load video")
@@ -63,9 +78,44 @@ export default function Page() {
     }
   }, [])
 
+  const loadBgImage = useCallback((file: File) => {
+    if (!file.type.startsWith("image/")) return
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      setBgImage(img)
+      setBgPreviewUrl(url)
+    }
+    img.src = url
+  }, [])
+
+  // Paste an image from the clipboard.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"))
+      const file = item?.getAsFile()
+      if (file) loadFile(file)
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [loadFile])
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) loadFile(file)
+  }
+
+  const handleBgInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) loadBgImage(file)
+  }
+
+  const pickMedia = (type: "image" | "video") => {
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = type === "video" ? "video/*" : "image/*"
+      fileInputRef.current.click()
+    }
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -74,6 +124,14 @@ export default function Page() {
     const file = e.dataTransfer.files?.[0]
     if (file) loadFile(file)
   }
+
+  const handleCanvasChange = useCallback((patch: Partial<CanvasSettings>) => {
+    setSettings((prev) => (prev ? { ...prev, ...patch } : prev))
+  }, [])
+
+  const handleCanvasReset = useCallback(() => {
+    if (originalSize) setSettings({ width: originalSize.width, height: originalSize.height, ...DEFAULT_CANVAS })
+  }, [originalSize])
 
   const handleDownload = () => {
     const dataUrl = canvasHandle.current?.capture()
@@ -87,6 +145,9 @@ export default function Page() {
   const clearMedia = () => {
     setMedia(null)
     setMediaName("")
+    setPreviewUrl(null)
+    setOriginalSize(null)
+    setSettings(null)
     setError(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
@@ -111,21 +172,8 @@ export default function Page() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            className="hidden"
-            onChange={handleFileInput}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-secondary"
-          >
-            <Upload className="size-3.5" />
-            Upload
-          </button>
+          <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileInput} />
+          <input ref={bgInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgInput} />
           <button
             type="button"
             onClick={handleDownload}
@@ -164,23 +212,25 @@ export default function Page() {
             media={media}
             shaderId={shaderId}
             params={params}
+            settings={settings}
+            bgImage={bgImage}
             onError={setError}
           />
 
           {!media && (
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => pickMedia("image")}
               className={`relative z-10 flex flex-col items-center gap-4 rounded-xl border border-dashed px-16 py-14 text-center transition-colors ${
                 dragging ? "border-foreground bg-secondary/60" : "border-border hover:border-foreground/40"
               }`}
             >
               <div className="flex size-12 items-center justify-center rounded-full bg-secondary">
-                <Upload className="size-5 text-muted-foreground" />
+                <ImageIcon className="size-5 text-muted-foreground" />
               </div>
               <div>
                 <p className="text-sm font-medium">Drop an image or video</p>
-                <p className="mt-1 text-xs text-muted-foreground">or click to browse from your computer</p>
+                <p className="mt-1 text-xs text-muted-foreground">click to browse, or paste with Cmd/Ctrl+V</p>
               </div>
             </button>
           )}
@@ -193,13 +243,24 @@ export default function Page() {
         </div>
 
         {/* Sidebar */}
-        <aside className="w-72 shrink-0 border-l border-border bg-card/40">
+        <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-border bg-card/40">
+          <MediaPanel
+            mediaKind={media?.kind ?? null}
+            previewUrl={previewUrl}
+            originalSize={originalSize}
+            settings={settings}
+            onChange={handleCanvasChange}
+            onReset={handleCanvasReset}
+            onPickMedia={pickMedia}
+            bgPreviewUrl={bgPreviewUrl}
+            onPickBgImage={() => bgInputRef.current?.click()}
+          />
           <ControlsPanel
             activeShader={activeShader}
             onSelectShader={handleSelectShader}
             params={params}
             onParamChange={handleParamChange}
-            onReset={handleReset}
+            onReset={handleParamsReset}
           />
         </aside>
       </div>
