@@ -158,9 +158,9 @@ export default function Page() {
       <header className="flex items-center justify-between border-b border-border px-5 py-3">
         <div className="flex items-center gap-2">
           <div className="flex size-6 items-center justify-center rounded-sm bg-foreground text-background">
-            <span className="text-xs font-bold">S</span>
+            <span className="text-xs font-bold">C</span>
           </div>
-          <h1 className="text-sm font-semibold tracking-tight">Shader Lab</h1>
+          <h1 className="text-sm font-semibold tracking-tight">city48</h1>
           {mediaName && (
             <span className="ml-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               {media?.kind === "video" ? <Video className="size-3" /> : <ImageIcon className="size-3" />}

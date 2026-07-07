@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Shader Lab',
+  title: 'city48',
   description: 'Upload an image or video and apply real-time WebGL shaders',
   generator: 'v0.app',
   icons: {
