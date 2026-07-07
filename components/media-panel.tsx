@@ -137,7 +137,7 @@ export function MediaPanel({
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-1.5 rounded-md text-xs font-semibold uppercase tracking-wider text-foreground"
         >
-          Canvas Settings
+          Canvas
           <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
         <button
@@ -145,7 +145,7 @@ export function MediaPanel({
           onClick={onReset}
           className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
         >
-          Restore Default
+          Restore
           <RotateCcw className="size-3.5" />
         </button>
       </div>
