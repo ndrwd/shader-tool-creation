@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
+import { ChevronDown, Check } from "lucide-react"
 import { SHADERS, type ShaderDef } from "@/lib/shaders"
 
 type Props = {
@@ -17,29 +19,72 @@ export function ControlsPanel({
   onParamChange,
   onReset,
 }: Props) {
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [open])
+
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-5">
       <section>
         <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Shader</h2>
-        <div className="flex flex-col gap-1">
-          {SHADERS.map((shader) => {
-            const active = shader.id === activeShader.id
-            return (
-              <button
-                key={shader.id}
-                type="button"
-                onClick={() => onSelectShader(shader.id)}
-                className={`flex flex-col rounded-md border px-3 py-2.5 text-left transition-colors ${
-                  active
-                    ? "border-foreground/30 bg-secondary text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                }`}
-              >
-                <span className="text-sm font-medium">{shader.name}</span>
-                <span className="text-xs text-muted-foreground">{shader.description}</span>
-              </button>
-            )
-          })}
+        <div ref={dropdownRef} className="relative">
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
+          >
+            <span className="flex flex-col">
+              <span className="text-sm font-medium text-foreground">{activeShader.name}</span>
+              <span className="text-xs text-muted-foreground">{activeShader.description}</span>
+            </span>
+            <ChevronDown
+              className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {open && (
+            <div
+              role="listbox"
+              className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+            >
+              {SHADERS.map((shader) => {
+                const active = shader.id === activeShader.id
+                return (
+                  <button
+                    key={shader.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => {
+                      onSelectShader(shader.id)
+                      setOpen(false)
+                    }}
+                    className={`flex w-full items-start gap-2 rounded-sm px-2.5 py-2 text-left transition-colors ${
+                      active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                    }`}
+                  >
+                    <Check className={`mt-0.5 size-3.5 shrink-0 ${active ? "opacity-100" : "opacity-0"}`} />
+                    <span className="flex flex-col">
+                      <span className="text-sm font-medium">{shader.name}</span>
+                      <span className="text-xs text-muted-foreground">{shader.description}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       </section>
 
