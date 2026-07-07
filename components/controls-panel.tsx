@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Check } from "lucide-react"
+import { ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react"
 import { SHADERS, type ShaderDef } from "@/lib/shaders"
 
 type Props = {
@@ -33,25 +33,49 @@ export function ControlsPanel({
     return () => document.removeEventListener("mousedown", handleClick)
   }, [open])
 
+  function cycleShader(dir: 1 | -1) {
+    const index = SHADERS.findIndex((s) => s.id === activeShader.id)
+    const next = (index + dir + SHADERS.length) % SHADERS.length
+    onSelectShader(SHADERS[next].id)
+  }
+
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-5">
       <section>
         <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Shader</h2>
-        <div ref={dropdownRef} className="relative">
+        <div ref={dropdownRef} className="relative flex items-stretch gap-2">
+          <button
+            type="button"
+            aria-label="Previous shader"
+            onClick={() => cycleShader(-1)}
+            className="flex w-10 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+
           <button
             type="button"
             aria-haspopup="listbox"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
+            className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
           >
-            <span className="flex flex-col">
-              <span className="text-sm font-medium text-foreground">{activeShader.name}</span>
-              <span className="text-xs text-muted-foreground">{activeShader.description}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-medium text-foreground">{activeShader.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{activeShader.description}</span>
             </span>
             <ChevronDown
               className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
             />
+          </button>
+
+          <button
+            type="button"
+            aria-label="Next shader"
+            onClick={() => cycleShader(1)}
+            className="flex w-10 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <ChevronRight className="size-4" />
           </button>
 
           {open && (
