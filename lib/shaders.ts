@@ -9,6 +9,8 @@ export type ShaderParam = {
   max: number
   step: number
   default: number
+  // "toggle" renders as an on/off switch (value is 0 or 1). Defaults to "range".
+  type?: "range" | "toggle"
 }
 
 export type ShaderDef = {
@@ -17,6 +19,11 @@ export type ShaderDef = {
   description: string
   fragment: string
   params: ShaderParam[]
+}
+
+// Helper to declare a boolean on/off parameter.
+function toggle(key: string, label: string, on = false): ShaderParam {
+  return { key, label, min: 0, max: 1, step: 1, default: on ? 1 : 0, type: "toggle" }
 }
 
 // Shared vertex shader — draws a full-screen quad and passes UV coordinates.
@@ -46,11 +53,13 @@ export const SHADERS: ShaderDef[] = [
       { key: "pixelSize", label: "Pixel Size", min: 1, max: 16, step: 1, default: 3 },
       { key: "levels", label: "Color Levels", min: 2, max: 8, step: 1, default: 3 },
       { key: "contrast", label: "Contrast", min: 0.5, max: 2.5, step: 0.05, default: 1.2 },
+      toggle("mono", "Monochrome"),
     ],
     fragment: `${HEADER}
 uniform float u_pixelSize;
 uniform float u_levels;
 uniform float u_contrast;
+uniform float u_mono;
 
 float bayer4(vec2 p) {
   int x = int(mod(p.x, 4.0));
@@ -70,6 +79,10 @@ void main() {
   vec2 px = u_pixelSize / u_resolution;
   vec2 uv = px * floor(v_uv / px);
   vec3 color = texture2D(u_texture, uv).rgb;
+  if (u_mono > 0.5) {
+    float l = dot(color, vec3(0.299, 0.587, 0.114));
+    color = vec3(l);
+  }
   color = (color - 0.5) * u_contrast + 0.5;
   float threshold = bayer4(gl_FragCoord.xy / u_pixelSize);
   vec3 dithered = color + (threshold - 0.5) / u_levels;
@@ -85,7 +98,7 @@ void main() {
     params: [
       { key: "amount", label: "Amount", min: 0, max: 0.05, step: 0.001, default: 0.012 },
       { key: "angle", label: "Angle", min: 0, max: 6.28, step: 0.01, default: 0.0 },
-      { key: "animate", label: "Animate", min: 0, max: 1, step: 1, default: 0 },
+      toggle("animate", "Animate"),
     ],
     fragment: `${HEADER}
 uniform float u_amount;
@@ -184,6 +197,279 @@ void main() {
   uv.x += sin(uv.y * u_frequency + t) * u_amplitude;
   uv.y += cos(uv.x * u_frequency + t) * u_amplitude;
   gl_FragColor = vec4(texture2D(u_texture, uv).rgb, 1.0);
+}
+`,
+  },
+  {
+    id: "halftone",
+    name: "Halftone",
+    description: "Print-style halftone dot pattern",
+    params: [
+      { key: "scale", label: "Dot Scale", min: 40, max: 300, step: 2, default: 120 },
+      { key: "angle", label: "Grid Angle", min: 0, max: 1.57, step: 0.01, default: 0.4 },
+      { key: "smooth", label: "Softness", min: 0.0, max: 0.5, step: 0.01, default: 0.12 },
+      toggle("color", "Colored"),
+    ],
+    fragment: `${HEADER}
+uniform float u_scale;
+uniform float u_angle;
+uniform float u_smooth;
+uniform float u_color;
+
+mat2 rot(float a) { return mat2(cos(a), -sin(a), sin(a), cos(a)); }
+
+float halftone(float value, vec2 coord) {
+  vec2 g = rot(u_angle) * coord * u_scale;
+  vec2 cell = fract(g) - 0.5;
+  float d = length(cell);
+  float radius = sqrt(1.0 - clamp(value, 0.0, 1.0)) * 0.7;
+  return smoothstep(radius + u_smooth, radius - u_smooth, d);
+}
+
+void main() {
+  vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+  vec2 coord = v_uv * aspect;
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  if (u_color > 0.5) {
+    float r = halftone(color.r, coord);
+    float g = halftone(color.g, coord + 0.33);
+    float b = halftone(color.b, coord + 0.66);
+    gl_FragColor = vec4(r, g, b, 1.0);
+  } else {
+    float l = dot(color, vec3(0.299, 0.587, 0.114));
+    float dot_ = halftone(l, coord);
+    gl_FragColor = vec4(vec3(dot_), 1.0);
+  }
+}
+`,
+  },
+  {
+    id: "kaleidoscope",
+    name: "Kaleidoscope",
+    description: "Mirrored radial symmetry",
+    params: [
+      { key: "segments", label: "Segments", min: 2, max: 24, step: 1, default: 6 },
+      { key: "zoom", label: "Zoom", min: 0.3, max: 2.5, step: 0.02, default: 1.0 },
+      { key: "spin", label: "Spin Speed", min: 0, max: 3, step: 0.02, default: 0.0 },
+      toggle("animate", "Rotate"),
+    ],
+    fragment: `${HEADER}
+uniform float u_segments;
+uniform float u_zoom;
+uniform float u_spin;
+uniform float u_animate;
+
+void main() {
+  vec2 p = (v_uv - 0.5) * 2.0;
+  p.x *= u_resolution.x / u_resolution.y;
+  float r = length(p);
+  float a = atan(p.y, p.x);
+  a += u_animate * u_time * u_spin;
+  float seg = 3.14159265 * 2.0 / u_segments;
+  a = mod(a, seg);
+  a = abs(a - seg * 0.5);
+  vec2 uv = vec2(cos(a), sin(a)) * r / u_zoom;
+  uv = fract(uv * 0.5 + 0.5);
+  gl_FragColor = vec4(texture2D(u_texture, uv).rgb, 1.0);
+}
+`,
+  },
+  {
+    id: "glitch",
+    name: "Glitch",
+    description: "Digital block displacement and color tearing",
+    params: [
+      { key: "intensity", label: "Intensity", min: 0, max: 1, step: 0.02, default: 0.4 },
+      { key: "blockSize", label: "Block Size", min: 4, max: 60, step: 1, default: 20 },
+      { key: "speed", label: "Speed", min: 0, max: 6, step: 0.1, default: 2.0 },
+    ],
+    fragment: `${HEADER}
+uniform float u_intensity;
+uniform float u_blockSize;
+uniform float u_speed;
+
+float rand(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
+
+void main() {
+  float t = floor(u_time * u_speed);
+  vec2 block = floor(v_uv * u_blockSize);
+  float noise = rand(block + t);
+  float active = step(1.0 - u_intensity, noise);
+  float shift = (rand(vec2(block.y, t)) - 0.5) * 0.2 * u_intensity * active;
+  vec2 uv = vec2(fract(v_uv.x + shift), v_uv.y);
+  float ca = 0.02 * u_intensity * active;
+  float r = texture2D(u_texture, uv + vec2(ca, 0.0)).r;
+  float g = texture2D(u_texture, uv).g;
+  float b = texture2D(u_texture, uv - vec2(ca, 0.0)).b;
+  gl_FragColor = vec4(r, g, b, 1.0);
+}
+`,
+  },
+  {
+    id: "edge",
+    name: "Edge Detection",
+    description: "Sobel outline extraction",
+    params: [
+      { key: "strength", label: "Strength", min: 0.2, max: 4.0, step: 0.05, default: 1.5 },
+      { key: "thickness", label: "Thickness", min: 0.5, max: 4.0, step: 0.1, default: 1.0 },
+      toggle("invert", "Invert"),
+    ],
+    fragment: `${HEADER}
+uniform float u_strength;
+uniform float u_thickness;
+uniform float u_invert;
+
+float lum(vec2 uv) {
+  vec3 c = texture2D(u_texture, uv).rgb;
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+  vec2 px = u_thickness / u_resolution;
+  float tl = lum(v_uv + px * vec2(-1.0,  1.0));
+  float t  = lum(v_uv + px * vec2( 0.0,  1.0));
+  float tr = lum(v_uv + px * vec2( 1.0,  1.0));
+  float l  = lum(v_uv + px * vec2(-1.0,  0.0));
+  float rr = lum(v_uv + px * vec2( 1.0,  0.0));
+  float bl = lum(v_uv + px * vec2(-1.0, -1.0));
+  float b  = lum(v_uv + px * vec2( 0.0, -1.0));
+  float br = lum(v_uv + px * vec2( 1.0, -1.0));
+  float gx = -tl - 2.0*l - bl + tr + 2.0*rr + br;
+  float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
+  float g = clamp(sqrt(gx*gx + gy*gy) * u_strength, 0.0, 1.0);
+  if (u_invert > 0.5) g = 1.0 - g;
+  gl_FragColor = vec4(vec3(g), 1.0);
+}
+`,
+  },
+  {
+    id: "posterize",
+    name: "Posterize",
+    description: "Reduce colors to flat poster-like bands",
+    params: [
+      { key: "levels", label: "Levels", min: 2, max: 16, step: 1, default: 5 },
+      { key: "saturation", label: "Saturation", min: 0, max: 2, step: 0.02, default: 1.2 },
+      { key: "gamma", label: "Gamma", min: 0.4, max: 2.5, step: 0.02, default: 1.0 },
+    ],
+    fragment: `${HEADER}
+uniform float u_levels;
+uniform float u_saturation;
+uniform float u_gamma;
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  color = pow(color, vec3(u_gamma));
+  float l = dot(color, vec3(0.299, 0.587, 0.114));
+  color = mix(vec3(l), color, u_saturation);
+  color = floor(color * u_levels) / (u_levels - 1.0);
+  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`,
+  },
+  {
+    id: "vhs",
+    name: "VHS",
+    description: "Analog tape wobble, noise and color bleed",
+    params: [
+      { key: "wobble", label: "Wobble", min: 0, max: 0.02, step: 0.0005, default: 0.005 },
+      { key: "noise", label: "Noise", min: 0, max: 1, step: 0.02, default: 0.25 },
+      { key: "bleed", label: "Color Bleed", min: 0, max: 0.03, step: 0.001, default: 0.008 },
+      { key: "speed", label: "Speed", min: 0, max: 4, step: 0.05, default: 1.0 },
+    ],
+    fragment: `${HEADER}
+uniform float u_wobble;
+uniform float u_noise;
+uniform float u_bleed;
+uniform float u_speed;
+
+float rand(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
+
+void main() {
+  float t = u_time * u_speed;
+  float line = v_uv.y * u_resolution.y;
+  float wob = sin(v_uv.y * 80.0 + t * 6.0) * u_wobble
+            + (rand(vec2(floor(line * 0.5), floor(t * 10.0))) - 0.5) * u_wobble * 2.0;
+  vec2 uv = vec2(v_uv.x + wob, v_uv.y);
+  float r = texture2D(u_texture, uv + vec2(u_bleed, 0.0)).r;
+  float g = texture2D(u_texture, uv).g;
+  float b = texture2D(u_texture, uv - vec2(u_bleed, 0.0)).b;
+  vec3 color = vec3(r, g, b);
+  float n = rand(v_uv + fract(t)) - 0.5;
+  color += n * u_noise;
+  float scan = 0.9 + 0.1 * sin(v_uv.y * u_resolution.y * 1.5);
+  color *= scan;
+  gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`,
+  },
+  {
+    id: "bloom",
+    name: "Bloom",
+    description: "Soft glow that blooms from bright areas",
+    params: [
+      { key: "threshold", label: "Threshold", min: 0, max: 1, step: 0.02, default: 0.6 },
+      { key: "intensity", label: "Intensity", min: 0, max: 3, step: 0.05, default: 1.2 },
+      { key: "radius", label: "Radius", min: 1, max: 8, step: 0.1, default: 3.0 },
+    ],
+    fragment: `${HEADER}
+uniform float u_threshold;
+uniform float u_intensity;
+uniform float u_radius;
+
+vec3 sampleBright(vec2 uv) {
+  vec3 c = texture2D(u_texture, uv).rgb;
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  return c * smoothstep(u_threshold, 1.0, l);
+}
+
+void main() {
+  vec3 base = texture2D(u_texture, v_uv).rgb;
+  vec2 px = u_radius / u_resolution;
+  vec3 bloom = vec3(0.0);
+  float total = 0.0;
+  for (int x = -3; x <= 3; x++) {
+    for (int y = -3; y <= 3; y++) {
+      vec2 off = vec2(float(x), float(y));
+      float w = exp(-dot(off, off) * 0.25);
+      bloom += sampleBright(v_uv + off * px) * w;
+      total += w;
+    }
+  }
+  bloom /= total;
+  gl_FragColor = vec4(base + bloom * u_intensity, 1.0);
+}
+`,
+  },
+  {
+    id: "grayscale",
+    name: "Duotone",
+    description: "Map luminance between two tones",
+    params: [
+      { key: "hueA", label: "Shadow Hue", min: 0, max: 1, step: 0.005, default: 0.62 },
+      { key: "hueB", label: "Highlight Hue", min: 0, max: 1, step: 0.005, default: 0.08 },
+      { key: "contrast", label: "Contrast", min: 0.5, max: 2.5, step: 0.02, default: 1.2 },
+      toggle("swap", "Swap Tones"),
+    ],
+    fragment: `${HEADER}
+uniform float u_hueA;
+uniform float u_hueB;
+uniform float u_contrast;
+uniform float u_swap;
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  float l = dot(color, vec3(0.299, 0.587, 0.114));
+  l = clamp((l - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+  vec3 a = hsv2rgb(vec3(u_hueA, 0.6, 0.25));
+  vec3 b = hsv2rgb(vec3(u_hueB, 0.7, 1.0));
+  if (u_swap > 0.5) { vec3 tmp = a; a = b; b = tmp; }
+  gl_FragColor = vec4(mix(a, b, l), 1.0);
 }
 `,
   },

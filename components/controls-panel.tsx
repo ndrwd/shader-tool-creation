@@ -59,7 +59,34 @@ export function ControlsPanel({
         <div className="flex flex-col gap-5">
           {activeShader.params.map((p) => {
             const value = params[p.key] ?? p.default
-            const isToggle = p.min === 0 && p.max === 1 && p.step === 1
+
+            if (p.type === "toggle") {
+              const on = value >= 0.5
+              return (
+                <div key={p.key} className="flex items-center justify-between">
+                  <label htmlFor={p.key} className="text-sm text-foreground">
+                    {p.label}
+                  </label>
+                  <button
+                    id={p.key}
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    onClick={() => onParamChange(p.key, on ? 0 : 1)}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                      on ? "bg-foreground" : "bg-secondary"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-4 w-4 rounded-full transition-transform ${
+                        on ? "translate-x-4 bg-background" : "translate-x-0.5 bg-muted-foreground"
+                      }`}
+                    />
+                  </button>
+                </div>
+              )
+            }
+
             return (
               <div key={p.key} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -67,7 +94,7 @@ export function ControlsPanel({
                     {p.label}
                   </label>
                   <span className="font-mono text-xs text-muted-foreground">
-                    {isToggle ? (value >= 0.5 ? "on" : "off") : value.toFixed(p.step < 0.01 ? 3 : 2)}
+                    {value.toFixed(p.step < 0.01 ? 3 : 2)}
                   </span>
                 </div>
                 <input
