@@ -48,7 +48,7 @@ export function ControlsPanel({
             type="button"
             aria-label="Previous shader"
             onClick={() => cycleShader(-1)}
-            className="flex w-10 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            className="flex w-5 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -73,7 +73,7 @@ export function ControlsPanel({
             type="button"
             aria-label="Next shader"
             onClick={() => cycleShader(1)}
-            className="flex w-10 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            className="flex w-5 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/40 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <ChevronRight className="size-4" />
           </button>
