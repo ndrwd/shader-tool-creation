@@ -51,7 +51,7 @@ export function MediaPanel({
   bgPreviewUrl,
   onPickBgImage,
 }: Props) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const padRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
