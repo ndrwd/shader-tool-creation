@@ -80,7 +80,7 @@ function LayerCard({
   return (
     <div
       className={`rounded-md border transition-colors ${
-        isSelected ? "border-foreground/30 bg-secondary" : "border-border bg-secondary/30 hover:bg-secondary/60"
+        isSelected ? "border-foreground/30 bg-card" : "border-border bg-card/50 hover:bg-card/80"
       }`}
     >
       {/* Header row */}
@@ -128,7 +128,7 @@ function LayerCard({
               aria-haspopup="listbox"
               aria-expanded={open}
               onClick={() => setOpen((v) => !v)}
-              className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md border border-border bg-background/40 px-3 py-2.5 text-left transition-colors hover:bg-background/70"
+              className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2.5 text-left transition-colors hover:bg-secondary"
             >
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-medium text-foreground">{shader.name}</span>
