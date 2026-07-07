@@ -736,6 +736,98 @@ void main() {
 }
 `,
   },
+  {
+    id: "spiralHalftone",
+    name: "Spiral Halftone",
+    description: "Halftone dots arranged along a rotating spiral",
+    params: [
+      { key: "scale", label: "Dot Scale", min: 4.0, max: 60.0, step: 1.0, default: 24.0 },
+      { key: "twist", label: "Twist", min: 0.0, max: 20.0, step: 0.1, default: 6.0 },
+      { key: "contrast", label: "Contrast", min: 0.5, max: 3.0, step: 0.05, default: 1.3 },
+      { key: "spin", label: "Spin Speed", min: -3.0, max: 3.0, step: 0.05, default: 0.4 },
+      toggle("colored", "Colored"),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_scale;
+uniform float u_twist;
+uniform float u_contrast;
+uniform float u_spin;
+uniform float u_colored;
+uniform float u_mix;
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  float aspect = u_resolution.x / u_resolution.y;
+
+  // Polar coordinates around the center, aspect corrected.
+  vec2 p = v_uv - 0.5;
+  p.x *= aspect;
+  float r = length(p);
+  float a = atan(p.y, p.x) + u_time * u_spin;
+
+  // Warp the sampling grid into a spiral, then build a dot lattice.
+  vec2 spiral = vec2(a * u_twist + r * u_scale, r * u_scale);
+  vec2 cell = fract(spiral) - 0.5;
+  float dist = length(cell) * 2.0;
+
+  float lum = clamp((dot(color, vec3(0.299, 0.587, 0.114)) - 0.5) * u_contrast + 0.5, 0.0, 1.0);
+  float dotMask = smoothstep(lum + 0.05, lum - 0.05, dist);
+
+  vec3 result = u_colored > 0.5 ? color * dotMask : vec3(dotMask);
+  gl_FragColor = vec4(mix(color, result, u_mix), 1.0);
+}
+`,
+  },
+  {
+    id: "grainyBright",
+    name: "Grainy Bright Colours",
+    description: "Vivid saturated grade with punchy chromatic grain",
+    params: [
+      { key: "saturation", label: "Saturation", min: 1.0, max: 3.0, step: 0.05, default: 1.8 },
+      { key: "vibrance", label: "Vibrance", min: 0.0, max: 2.0, step: 0.05, default: 1.0 },
+      { key: "brightness", label: "Brightness", min: 0.0, max: 0.6, step: 0.01, default: 0.15 },
+      { key: "grain", label: "Grain", min: 0.0, max: 1.0, step: 0.01, default: 0.4 },
+      { key: "grainSize", label: "Grain Size", min: 0.5, max: 4.0, step: 0.05, default: 1.5 },
+      toggle("animate", "Animate", true),
+      blend(),
+    ],
+    fragment: `${HEADER}
+uniform float u_saturation;
+uniform float u_vibrance;
+uniform float u_brightness;
+uniform float u_grain;
+uniform float u_grainSize;
+uniform float u_animate;
+uniform float u_mix;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec3 color = texture2D(u_texture, v_uv).rgb;
+  vec3 c = color + u_brightness;
+
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  // Base saturation lift.
+  c = mix(vec3(l), c, u_saturation);
+  // Vibrance protects already-saturated pixels, boosts muted ones.
+  float sat = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
+  c = mix(vec3(l), c, 1.0 + u_vibrance * (1.0 - sat));
+
+  float seed = u_animate > 0.5 ? floor(u_time * 24.0) : 0.0;
+  vec2 gp = floor(gl_FragCoord.xy / u_grainSize) + seed;
+  vec3 noise = vec3(hash(gp), hash(gp + 17.0), hash(gp + 43.0)) - 0.5;
+  c += noise * u_grain;
+
+  c = clamp(c, 0.0, 1.0);
+  gl_FragColor = vec4(mix(color, c, u_mix), 1.0);
+}
+`,
+  },
 ]
 
 export function getShader(id: string): ShaderDef {
