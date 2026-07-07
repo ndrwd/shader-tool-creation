@@ -2,7 +2,7 @@
 
 import { useEffect, useImperativeHandle, useRef, forwardRef } from "react"
 import { ShaderRenderer, type MediaSource, type CanvasSettings } from "@/lib/renderer"
-import { getShader } from "@/lib/shaders"
+import { getShader, type ShaderLayer } from "@/lib/shaders"
 
 export type ShaderCanvasHandle = {
   capture: () => string | null
@@ -10,15 +10,14 @@ export type ShaderCanvasHandle = {
 
 type Props = {
   media: MediaSource | null
-  shaderId: string
-  params: Record<string, number>
+  layers: ShaderLayer[]
   settings: CanvasSettings | null
   bgImage: HTMLImageElement | null
   onError: (message: string | null) => void
 }
 
 export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function ShaderCanvas(
-  { media, shaderId, params, settings, bgImage, onError },
+  { media, layers, settings, bgImage, onError },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -61,21 +60,19 @@ export const ShaderCanvas = forwardRef<ShaderCanvasHandle, Props>(function Shade
     rendererRef.current?.setBackgroundImage(bgImage)
   }, [bgImage])
 
-  // Update shader program.
+  // Update the shader chain (enabled layers, in order).
   useEffect(() => {
     if (!rendererRef.current) return
     try {
-      rendererRef.current.setShader(getShader(shaderId))
+      const enabled = layers
+        .filter((l) => l.enabled)
+        .map((l) => ({ shader: getShader(l.shaderId), params: l.params }))
+      rendererRef.current.setLayers(enabled)
       onError(null)
     } catch (e) {
       onError(e instanceof Error ? e.message : "Shader error")
     }
-  }, [shaderId, onError])
-
-  // Update params.
-  useEffect(() => {
-    rendererRef.current?.setParams(params)
-  }, [params])
+  }, [layers, onError])
 
   return (
     <canvas

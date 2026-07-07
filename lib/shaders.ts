@@ -618,3 +618,21 @@ export function defaultParams(shader: ShaderDef): Record<string, number> {
   for (const p of shader.params) out[p.key] = p.default
   return out
 }
+
+// A single effect in the shader stack. Enabled layers are applied in order.
+export type ShaderLayer = {
+  uid: string
+  shaderId: string
+  params: Record<string, number>
+  enabled: boolean
+}
+
+export function createLayer(shaderId: string): ShaderLayer {
+  const shader = getShader(shaderId)
+  return {
+    uid: Math.random().toString(36).slice(2, 10),
+    shaderId: shader.id,
+    params: defaultParams(shader),
+    enabled: true,
+  }
+}

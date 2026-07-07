@@ -60,24 +60,37 @@ const COMPOSE_FRAGMENT = `
   }
 `
 
-// Two-pass WebGL renderer: compose media into a framed texture, then run the shader on it.
+// Passthrough pass: blits a texture straight to the target (used when no shader is enabled).
+const PASSTHROUGH_FRAGMENT = `
+  precision highp float;
+  varying vec2 v_uv;
+  uniform sampler2D u_texture;
+  void main() { gl_FragColor = texture2D(u_texture, v_uv); }
+`
+
+type CompiledLayer = { program: WebGLProgram; params: Record<string, number> }
+
+// Multi-pass WebGL renderer: compose media into a framed texture, then run a chain
+// of shader passes over it via ping-pong framebuffers.
 export class ShaderRenderer {
   private gl: WebGLRenderingContext
   private canvas: HTMLCanvasElement
-  private program: WebGLProgram | null = null
   private composeProgram: WebGLProgram
+  private passthroughProgram: WebGLProgram
   private positionBuffer: WebGLBuffer
   private mediaTexture: WebGLTexture
   private bgTexture: WebGLTexture
   private composedTexture: WebGLTexture
+  private pingTexture: WebGLTexture
+  private pongTexture: WebGLTexture
   private framebuffer: WebGLFramebuffer
   private media: MediaSource | null = null
-  private params: Record<string, number> = {}
   private settings: CanvasSettings | null = null
   private hasBgImage = false
   private startTime = performance.now()
   private raf = 0
-  private currentFragment = ""
+  private layers: CompiledLayer[] = []
+  private programCache = new Map<string, WebGLProgram>()
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -92,9 +105,12 @@ export class ShaderRenderer {
     this.mediaTexture = this.createTexture(true)
     this.bgTexture = this.createTexture(true)
     this.composedTexture = this.createTexture(false)
+    this.pingTexture = this.createTexture(false)
+    this.pongTexture = this.createTexture(false)
     this.framebuffer = gl.createFramebuffer()!
 
     this.composeProgram = this.buildProgram(VERTEX_SHADER, COMPOSE_FRAGMENT)
+    this.passthroughProgram = this.buildProgram(VERTEX_SHADER, PASSTHROUGH_FRAGMENT)
   }
 
   private createTexture(flipY: boolean): WebGLTexture {
@@ -139,17 +155,16 @@ export class ShaderRenderer {
     return program
   }
 
-  setShader(shader: ShaderDef) {
-    if (shader.fragment === this.currentFragment && this.program) return
-    const gl = this.gl
-    const program = this.buildProgram(VERTEX_SHADER, shader.fragment)
-    if (this.program) gl.deleteProgram(this.program)
-    this.program = program
-    this.currentFragment = shader.fragment
-  }
-
-  setParams(params: Record<string, number>) {
-    this.params = params
+  // Build the shader chain from the enabled layers, caching programs by fragment source.
+  setLayers(layers: { shader: ShaderDef; params: Record<string, number> }[]) {
+    this.layers = layers.map(({ shader, params }) => {
+      let program = this.programCache.get(shader.fragment)
+      if (!program) {
+        program = this.buildProgram(VERTEX_SHADER, shader.fragment)
+        this.programCache.set(shader.fragment, program)
+      }
+      return { program, params }
+    })
   }
 
   setMedia(media: MediaSource) {
@@ -184,10 +199,12 @@ export class ShaderRenderer {
     this.canvas.width = w
     this.canvas.height = h
 
-    // (Re)allocate the composed target texture to match canvas size.
+    // (Re)allocate the intermediate target textures to match canvas size.
     const gl = this.gl
-    gl.bindTexture(gl.TEXTURE_2D, this.composedTexture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    for (const tex of [this.composedTexture, this.pingTexture, this.pongTexture]) {
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    }
   }
 
   private uploadMedia() {
@@ -246,40 +263,70 @@ export class ShaderRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
   }
 
-  private shaderPass() {
+  // Render a single pass: sample srcTexture with `program`, output to `targetTex`
+  // (null = draw to the screen).
+  private renderPass(
+    program: WebGLProgram,
+    srcTexture: WebGLTexture,
+    targetTex: WebGLTexture | null,
+    params: Record<string, number>,
+  ) {
     const gl = this.gl
-    if (!this.program) return
+    if (targetTex) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer)
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targetTex, 0)
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    }
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
 
-    gl.useProgram(this.program)
-    this.bindQuad(this.program)
+    gl.useProgram(program)
+    this.bindQuad(program)
 
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.composedTexture)
-    const texLoc = gl.getUniformLocation(this.program, "u_texture")
+    gl.bindTexture(gl.TEXTURE_2D, srcTexture)
+    const texLoc = gl.getUniformLocation(program, "u_texture")
     if (texLoc) gl.uniform1i(texLoc, 0)
 
-    const resLoc = gl.getUniformLocation(this.program, "u_resolution")
+    const resLoc = gl.getUniformLocation(program, "u_resolution")
     if (resLoc) gl.uniform2f(resLoc, this.canvas.width, this.canvas.height)
 
-    const timeLoc = gl.getUniformLocation(this.program, "u_time")
+    const timeLoc = gl.getUniformLocation(program, "u_time")
     if (timeLoc) gl.uniform1f(timeLoc, (performance.now() - this.startTime) / 1000)
 
-    for (const [key, value] of Object.entries(this.params)) {
-      const loc = gl.getUniformLocation(this.program, "u_" + key)
+    for (const [key, value] of Object.entries(params)) {
+      const loc = gl.getUniformLocation(program, "u_" + key)
       if (loc) gl.uniform1f(loc, value)
     }
 
     gl.drawArrays(gl.TRIANGLES, 0, 6)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  }
+
+  private shaderChain() {
+    // No enabled effects: blit the composed frame straight to the screen.
+    if (this.layers.length === 0) {
+      this.renderPass(this.passthroughProgram, this.composedTexture, null, {})
+      return
+    }
+
+    let src = this.composedTexture
+    const targets = [this.pingTexture, this.pongTexture]
+    for (let i = 0; i < this.layers.length; i++) {
+      const isLast = i === this.layers.length - 1
+      const target = isLast ? null : targets[i % 2]
+      this.renderPass(this.layers[i].program, src, target, this.layers[i].params)
+      if (!isLast) src = targets[i % 2]
+    }
   }
 
   private draw() {
-    if (!this.media || !this.settings || !this.program) return
+    if (!this.media || !this.settings) return
     this.uploadMedia()
     this.composePass()
-    this.shaderPass()
+    this.shaderChain()
   }
 
   start() {
@@ -303,12 +350,16 @@ export class ShaderRenderer {
   dispose() {
     this.stop()
     const gl = this.gl
-    if (this.program) gl.deleteProgram(this.program)
+    for (const program of this.programCache.values()) gl.deleteProgram(program)
+    this.programCache.clear()
     gl.deleteProgram(this.composeProgram)
+    gl.deleteProgram(this.passthroughProgram)
     gl.deleteBuffer(this.positionBuffer)
     gl.deleteTexture(this.mediaTexture)
     gl.deleteTexture(this.bgTexture)
     gl.deleteTexture(this.composedTexture)
+    gl.deleteTexture(this.pingTexture)
+    gl.deleteTexture(this.pongTexture)
     gl.deleteFramebuffer(this.framebuffer)
   }
 }

@@ -5,12 +5,12 @@ import { Download, ImageIcon, Video, X } from "lucide-react"
 import { ShaderCanvas, type ShaderCanvasHandle } from "@/components/shader-canvas"
 import { ControlsPanel } from "@/components/controls-panel"
 import { MediaPanel } from "@/components/media-panel"
-import { getShader, defaultParams } from "@/lib/shaders"
+import { getShader, defaultParams, createLayer, type ShaderLayer } from "@/lib/shaders"
 import { DEFAULT_CANVAS, type CanvasSettings, type MediaSource } from "@/lib/renderer"
 
 export default function Page() {
-  const [shaderId, setShaderId] = useState("dither")
-  const [params, setParams] = useState<Record<string, number>>(() => defaultParams(getShader("dither")))
+  const [layers, setLayers] = useState<ShaderLayer[]>(() => [createLayer("dither")])
+  const [selectedUid, setSelectedUid] = useState<string | null>(() => null)
   const [media, setMedia] = useState<MediaSource | null>(null)
   const [mediaName, setMediaName] = useState<string>("")
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -25,20 +25,44 @@ export default function Page() {
   const bgInputRef = useRef<HTMLInputElement>(null)
   const canvasHandle = useRef<ShaderCanvasHandle>(null)
 
-  const activeShader = getShader(shaderId)
+  // Keep a valid layer selected as the stack changes.
+  useEffect(() => {
+    if (layers.length === 0) {
+      if (selectedUid !== null) setSelectedUid(null)
+    } else if (!layers.some((l) => l.uid === selectedUid)) {
+      setSelectedUid(layers[layers.length - 1].uid)
+    }
+  }, [layers, selectedUid])
 
-  const handleSelectShader = useCallback((id: string) => {
-    setShaderId(id)
-    setParams(defaultParams(getShader(id)))
+  const handleAddLayer = useCallback(() => {
+    const layer = createLayer("dither")
+    setLayers((prev) => [...prev, layer])
+    setSelectedUid(layer.uid)
   }, [])
 
-  const handleParamChange = useCallback((key: string, value: number) => {
-    setParams((prev) => ({ ...prev, [key]: value }))
+  const handleRemoveLayer = useCallback((uid: string) => {
+    setLayers((prev) => prev.filter((l) => l.uid !== uid))
   }, [])
 
-  const handleParamsReset = useCallback(() => {
-    setParams(defaultParams(activeShader))
-  }, [activeShader])
+  const handleToggleLayer = useCallback((uid: string) => {
+    setLayers((prev) => prev.map((l) => (l.uid === uid ? { ...l, enabled: !l.enabled } : l)))
+  }, [])
+
+  const handleChangeShader = useCallback((uid: string, shaderId: string) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.uid === uid ? { ...l, shaderId, params: defaultParams(getShader(shaderId)) } : l)),
+    )
+  }, [])
+
+  const handleParamChange = useCallback((uid: string, key: string, value: number) => {
+    setLayers((prev) => prev.map((l) => (l.uid === uid ? { ...l, params: { ...l.params, [key]: value } } : l)))
+  }, [])
+
+  const handleResetParams = useCallback((uid: string) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.uid === uid ? { ...l, params: defaultParams(getShader(l.shaderId)) } : l)),
+    )
+  }, [])
 
   const loadFile = useCallback((file: File) => {
     setError(null)
@@ -152,7 +176,7 @@ export default function Page() {
     if (!dataUrl) return
     const a = document.createElement("a")
     a.href = dataUrl
-    a.download = `shader-${shaderId}-${Date.now()}.png`
+    a.download = `city48-${Date.now()}.png`
     a.click()
   }
 
@@ -224,8 +248,7 @@ export default function Page() {
           <ShaderCanvas
             ref={canvasHandle}
             media={media}
-            shaderId={shaderId}
-            params={params}
+            layers={layers}
             settings={settings}
             bgImage={bgImage}
             onError={setError}
@@ -270,11 +293,15 @@ export default function Page() {
             onPickBgImage={() => bgInputRef.current?.click()}
           />
           <ControlsPanel
-            activeShader={activeShader}
-            onSelectShader={handleSelectShader}
-            params={params}
+            layers={layers}
+            selectedUid={selectedUid}
+            onSelectLayer={setSelectedUid}
+            onAddLayer={handleAddLayer}
+            onRemoveLayer={handleRemoveLayer}
+            onToggleLayer={handleToggleLayer}
+            onChangeShader={handleChangeShader}
             onParamChange={handleParamChange}
-            onReset={handleParamsReset}
+            onResetParams={handleResetParams}
           />
         </aside>
       </div>
