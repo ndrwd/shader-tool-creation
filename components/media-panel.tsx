@@ -202,7 +202,7 @@ export function MediaPanel({
                   }}
                   onPointerMove={(e) => dragging.current && handlePad(e)}
                   onPointerUp={() => (dragging.current = false)}
-                  className="relative aspect-square min-w-0 flex-1 cursor-crosshair self-start rounded-md border border-border bg-secondary/30"
+                  className="relative aspect-square w-full min-w-0 max-w-24 cursor-crosshair self-start rounded-md border border-border bg-secondary/30"
                 >
                   {/* crosshair guides */}
                   <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
