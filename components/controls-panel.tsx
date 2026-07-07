@@ -118,13 +118,13 @@ export function ControlsPanel({
                     role="switch"
                     aria-checked={on}
                     onClick={() => onParamChange(p.key, on ? 0 : 1)}
-                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                      on ? "bg-foreground" : "bg-secondary"
+                    className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors ${
+                      on ? "justify-end bg-foreground" : "justify-start bg-secondary"
                     }`}
                   >
                     <span
-                      className={`absolute top-0.5 h-4 w-4 rounded-full transition-transform ${
-                        on ? "translate-x-4 bg-background" : "translate-x-0.5 bg-muted-foreground"
+                      className={`block h-4 w-4 rounded-full transition-colors ${
+                        on ? "bg-background" : "bg-muted-foreground"
                       }`}
                     />
                   </button>
