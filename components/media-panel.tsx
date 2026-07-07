@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ImageIcon, Video, ChevronDown, RotateCcw, Plus, Minus } from "lucide-react"
 import type { CanvasSettings } from "@/lib/renderer"
 
@@ -55,7 +55,23 @@ export function MediaPanel({
   const padRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
+  // Local editable strings so the number fields can be cleared/typed freely
+  const [widthStr, setWidthStr] = useState("")
+  const [heightStr, setHeightStr] = useState("")
+
+  useEffect(() => {
+    if (settings) setWidthStr(String(Math.round(settings.width)))
+  }, [settings?.width])
+  useEffect(() => {
+    if (settings) setHeightStr(String(Math.round(settings.height)))
+  }, [settings?.height])
+
   const activeTab = mediaKind ?? "image"
+
+  function commitSize(key: "width" | "height", raw: string) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n >= 1) onChange({ [key]: n } as Partial<CanvasSettings>)
+  }
 
   function handlePad(e: React.PointerEvent) {
     if (!padRef.current || !settings) return
@@ -98,7 +114,7 @@ export function MediaPanel({
         </div>
 
         {/* Thumbnail */}
-        <div className="size-14 shrink-0 overflow-hidden rounded-md border border-border bg-secondary/40">
+        <div className="size-11 shrink-0 overflow-hidden rounded-md border border-border bg-secondary/40">
           {previewUrl && mediaKind === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl || "/placeholder.svg"} alt="Current media preview" className="size-full object-cover" />
@@ -110,9 +126,9 @@ export function MediaPanel({
         </div>
       </div>
 
-      <p className="mt-3 text-center text-xs italic text-muted-foreground">Cmd/Ctrl+V to paste another image</p>
+      <p className="mt-2 text-center text-xs italic text-muted-foreground">Cmd/Ctrl+V to paste another image</p>
 
-      <div className="my-3 h-px bg-border" />
+      <div className="my-2.5 h-px bg-border" />
 
       {/* Canvas settings header */}
       <div className="flex items-center justify-between">
@@ -135,7 +151,7 @@ export function MediaPanel({
       </div>
 
       {expanded && settings && (
-        <div className="mt-5 flex flex-col gap-6">
+        <div className="mt-4 flex flex-col gap-4">
           {/* Size + Position row */}
           <div className="grid grid-cols-2 gap-4">
             {/* Size */}
@@ -148,16 +164,26 @@ export function MediaPanel({
                 <input
                   type="number"
                   min={1}
-                  value={Math.round(settings.width)}
-                  onChange={(e) => onChange({ width: Math.max(1, Number.parseInt(e.target.value) || 1) })}
+                  inputMode="numeric"
+                  value={widthStr}
+                  onChange={(e) => {
+                    setWidthStr(e.target.value)
+                    commitSize("width", e.target.value)
+                  }}
+                  onBlur={() => setWidthStr(String(Math.round(settings.width)))}
                   className="w-full min-w-0 rounded-md border border-border bg-secondary/40 px-2 py-1.5 text-sm text-foreground outline-none focus:border-foreground/40"
                 />
                 <span className="text-xs text-muted-foreground">x</span>
                 <input
                   type="number"
                   min={1}
-                  value={Math.round(settings.height)}
-                  onChange={(e) => onChange({ height: Math.max(1, Number.parseInt(e.target.value) || 1) })}
+                  inputMode="numeric"
+                  value={heightStr}
+                  onChange={(e) => {
+                    setHeightStr(e.target.value)
+                    commitSize("height", e.target.value)
+                  }}
+                  onBlur={() => setHeightStr(String(Math.round(settings.height)))}
                   className="w-full min-w-0 rounded-md border border-border bg-secondary/40 px-2 py-1.5 text-sm text-foreground outline-none focus:border-foreground/40"
                 />
               </div>
@@ -166,7 +192,7 @@ export function MediaPanel({
             {/* Position */}
             <div>
               <h3 className="mb-2 text-sm font-medium text-foreground">Position</h3>
-              <div className="flex gap-2">
+              <div className="flex items-stretch gap-2">
                 <div
                   ref={padRef}
                   onPointerDown={(e) => {
@@ -176,7 +202,7 @@ export function MediaPanel({
                   }}
                   onPointerMove={(e) => dragging.current && handlePad(e)}
                   onPointerUp={() => (dragging.current = false)}
-                  className="relative aspect-square flex-1 cursor-crosshair rounded-md border border-border bg-secondary/30"
+                  className="relative aspect-square min-w-0 flex-1 cursor-crosshair self-start rounded-md border border-border bg-secondary/30"
                 >
                   {/* crosshair guides */}
                   <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
